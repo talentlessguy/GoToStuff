@@ -19,8 +19,8 @@ abstract class Parser<T> {
 class ParseChar<T>() : Parser<T>() {
     override fun parse(input: StringE<T>): StringE<T> {
         return when (input) {
-            is Str -> if (!input.value[0].isDigit()) {
-                if (input.value != "") {
+            is Str -> if (input.value.isNotEmpty()) {
+                if (!input.value[0].isDigit()) {
                     Str(("" + input.value).substring(1), input.struct)
                 } else {
                     Error(input.value + "\nparse failed")
@@ -38,7 +38,7 @@ class ParseCustomChar<T>(val char: Char) : Parser<T>() {
         return when (input) {
             is Str -> if (input.value.isNotEmpty()) {
                 if (input.value[0] == char) {
-                    Str(("" + input.value).substring(1))
+                    Str(("" + input.value).substring(1), input.struct)
                 } else {
                     Error(input.value + "\nparse failed")
                 }
@@ -111,6 +111,13 @@ class ParseInt: Parser<Int>() {
     }
 }
 
+class ParseString: Parser<String>() {
+    override fun parse(string: StringE<String>): StringE<String> {
+        return Repeat(ParseChar<String>()).parse(string)
+    }
+}
+
+/*
 class ParseFloat: Parser<Float>() {
     override fun parse(string: StringE<Float>): StringE<Float> {
         val intParser = ParseInt()
@@ -121,13 +128,25 @@ class ParseFloat: Parser<Float>() {
         return Repeat(parser).parse(string)
     }
 }
+*/
+
+class ParseXMLLight: Parser<String>() {
+    override fun parse(string: StringE<String>): StringE<String> {
+        val leftParser = ParseCustomChar<String>('<')
+        val rightParser = ParseCustomChar<String>('>')
+        val strParser = ParseString()
+        val parser = Alternative(Alternative(leftParser, strParser), rightParser)
+
+        return Repeat(parser).parse(string)
+    }
+}
 
 fun main() {
-    val p = ParseInt()
+    val x = ParseXMLLight()
 
-    val res = p.parse(Str("123bac", 0))
+    val xml = x.parse(Str("<>b</>", ""))
 
-    when (res) {
-        is Str -> println(res.struct)
+    when (xml) {
+        is Str -> println(xml)
     }
 }
