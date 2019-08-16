@@ -1,4 +1,5 @@
 import StringE.*
+import kotlin.reflect.typeOf
 
 sealed class StringE<T> {
     class Str<T>(val value: String, val struct: T) : StringE<T>()
@@ -58,9 +59,9 @@ class Compose<T>(val p1: Parser<T>, val p2: Parser<T>) : Parser<T>() {
 
 class Alternative<T>(val p1: Parser<T>, val p2: Parser<T>) : Parser<T>() {
     override fun parse(string: StringE<T>): StringE<T> {
-        val r1 = p1.parse(string)
-        return when (r1) {
-            is Str -> r1
+        val r = p1.parse(string)
+        return when (r) {
+            is Str -> r
             is Error -> p2.parse(string)
         }
     }
@@ -117,36 +118,80 @@ class ParseString: Parser<String>() {
     }
 }
 
-/*
-class ParseFloat: Parser<Float>() {
-    override fun parse(string: StringE<Float>): StringE<Float> {
-        val intParser = ParseInt()
-        val dotParser = ParseCustomChar<Float>('.')
-
-        val parser : Compose<Float> = Compose<Float>(Compose<Float>(intParser, dotParser), intParser)
-
-        return Repeat(parser).parse(string)
-    }
-}
-*/
-
 class ParseXMLLight: Parser<String>() {
     override fun parse(string: StringE<String>): StringE<String> {
         val leftParser = ParseCustomChar<String>('<')
         val rightParser = ParseCustomChar<String>('>')
-        val strParser = ParseString()
-        val parser = Alternative(Alternative(leftParser, strParser), rightParser)
+        val xmlTokensParser = Alternative(leftParser, rightParser)
 
-        return Repeat(parser).parse(string)
+        return Repeat(xmlTokensParser).parse(string)
     }
 }
 
-fun main() {
-    val x = ParseXMLLight()
+class XML (val name: String, val children: List<XML>)
 
-    val xml = x.parse(Str("<>b</>", ""))
-
-    when (xml) {
-        is Str -> println(xml)
+class XMLOutput (private val name: String, private val children: String) {
+    override fun toString(): String {
+        var items = mutableListOf<String>()
+        items.add("$name -> XML")
+        items.add(children)
+        return items.joinToString(separator = ", ")
     }
+}
+
+fun substringAfter(str: String, delimiter: Char): String {
+    return if (str.contains(delimiter)) {
+        str.substringAfterLast(delimiter)
+    } else ""
+}
+
+fun structurize(xml: XML) : List<XMLOutput> {
+
+    val outputList = mutableListOf<XMLOutput>()
+    val root = XML("root", listOf(xml))
+
+    for (i in root.children) {
+        val id = substringAfter(i.name, '#')
+        val tagAlreadyExists = outputList.contains(outputList.find{ x -> substringAfter(i.name,'#').isNotBlank() })
+
+        val tagHasChildren = i.children.isNotEmpty()
+
+        if (tagHasChildren) {
+            for (child in i.children) {
+                val tagNum = substringAfter(child.name, '#')
+                println("Number: #${tagNum}")
+            }
+        } else {
+            if (tagAlreadyExists) {
+                outputList.add(XMLOutput("${i.name}#${id}", "XML"))
+            } else {
+                outputList.add(XMLOutput("${i.name}#1", "XML"))
+            }
+        }
+    }
+    return outputList.toList()
+}
+
+fun main() {
+    // Input: xml("aa", listOf(xml("bb", listOf())))
+    /*
+        Output:
+        ("bb#1","XML")
+        ("aa#1", "(cc#1, bb#1) -> XML")
+    */
+
+    val xml = XML(
+        "aa",
+        listOf(XML(
+            "bb", listOf()
+        ), XML(
+            "cc", listOf()
+        ), XML(
+                "aa", listOf()
+        ),
+            XML("bb", listOf())
+            )
+    )
+
+    structurize(xml)
 }
