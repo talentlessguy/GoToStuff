@@ -1,5 +1,5 @@
 import StringE.*
-import kotlin.reflect.typeOf
+import java.util.function.Predicate
 
 sealed class StringE<T> {
     class Str<T>(val value: String, val struct: T) : StringE<T>()
@@ -17,11 +17,15 @@ abstract class Parser<T> {
     abstract fun parse(string: StringE<T>): StringE<T>
 }
 
-class ParseChar<T>() : Parser<T>() {
+class IdParser<T> : Parser<T>() {
+    override fun parse(string: StringE<T>): StringE<T> = string
+}
+
+class ParseChar<T> : Parser<T>() {
     override fun parse(input: StringE<T>): StringE<T> {
         return when (input) {
-            is Str -> if (input.value.isNotEmpty()) {
-                if (!input.value[0].isDigit()) {
+            is Str -> return if (input.value.isNotEmpty()) {
+                return if (!input.value[0].isDigit()) {
                     Str(("" + input.value).substring(1), input.struct)
                 } else {
                     Error(input.value + "\nparse failed")
@@ -34,19 +38,38 @@ class ParseChar<T>() : Parser<T>() {
     }
 }
 
-class ParseCustomChar<T>(val char: Char) : Parser<T>() {
-    override fun parse(input: StringE<T>): StringE<T> {
-        return when (input) {
-            is Str -> if (input.value.isNotEmpty()) {
-                if (input.value[0] == char) {
-                    Str(("" + input.value).substring(1), input.struct)
+class ParseSkipChar<T>(val pred: Predicate<Char>) : Parser<T>() {
+    override fun parse(string: StringE<T>): StringE<T> {
+        return when (string) {
+            is Str -> if (string.value.isNotEmpty()) {
+                if (pred.test(string.value[0])) {
+                    Str(("" + string.value).substring(1), string.struct)
                 } else {
-                    Error(input.value + "\nparse failed")
+                    Error(string.value + "\nparse failed")
                 }
             } else {
-                Error(input.value + "\nempty")
+                Error(string.value + "\nempty")
             }
-            is Error -> Error(input.value)
+            is Error -> Error(string.value)
+        }
+    }
+}
+
+
+class ParseAddChar(val pred: Predicate<Char>) : Parser<String>() {
+    override fun parse(string: StringE<String>): StringE<String> {
+        return when (string) {
+            is Str -> if (string.value.isNotEmpty()) {
+                val c = string.value[0]
+                if (pred.test(c)) {
+                    Str(("" + string.value).substring(1), string.struct + c)
+                } else {
+                    Error(string.value + "\nparse failed")
+                }
+            } else {
+                Error(string.value + "\nempty")
+            }
+            is Error -> Error(string.value)
         }
     }
 }
@@ -118,24 +141,14 @@ class ParseString: Parser<String>() {
     }
 }
 
-class ParseXMLLight: Parser<String>() {
-    override fun parse(string: StringE<String>): StringE<String> {
-        val leftParser = ParseCustomChar<String>('<')
-        val rightParser = ParseCustomChar<String>('>')
-        val xmlTokensParser = Alternative(leftParser, rightParser)
-
-        return Repeat(xmlTokensParser).parse(string)
-    }
-}
-
 class XML (val name: String, val children: List<XML>)
 
-class XMLOutput (private val name: String, private val children: String) {
+class XMLOutput (val name: String, val children: String) {
     override fun toString(): String {
         var items = mutableListOf<String>()
         items.add("$name -> XML")
         items.add(children)
-        return items.joinToString(separator = ", ")
+        return items.joinToString(separator = ",\n")
     }
 }
 
@@ -145,31 +158,68 @@ fun substringAfter(str: String, delimiter: Char): String {
     } else ""
 }
 
-fun structurize(xml: XML) : List<XMLOutput> {
+fun structurize(xml: XML, id: Int) : List<XMLOutput> {
+    val children = xml.children
+    // var id = substringAfter(xml.name, '#').toInt()
+    if (children.isEmpty()) {
+        return listOf(XMLOutput("${xml.name}#${id}", "XML"))
+    } else {
+        var out = mutableListOf<XMLOutput>()
+        var childrenString = mutableListOf<String>()
 
-    val outputList = mutableListOf<XMLOutput>()
-    val root = XML("root", listOf(xml))
-
-    for (i in root.children) {
-        val id = substringAfter(i.name, '#')
-        val tagAlreadyExists = outputList.contains(outputList.find{ x -> substringAfter(i.name,'#').isNotBlank() })
-
-        val tagHasChildren = i.children.isNotEmpty()
-
-        if (tagHasChildren) {
-            for (child in i.children) {
-                val tagNum = substringAfter(child.name, '#')
-                println("Number: #${tagNum}")
-            }
-        } else {
-            if (tagAlreadyExists) {
-                outputList.add(XMLOutput("${i.name}#${id}", "XML"))
-            } else {
-                outputList.add(XMLOutput("${i.name}#1", "XML"))
+        for (child in children) {
+            var childrenOut: List<XMLOutput> = structurize(child, id + 1)
+            for (c in childrenOut) {
+                out.add(c)
+                childrenString.add(c.name)
             }
         }
+        var joined = childrenString.joinToString(separator = ", ")
+        var current = XMLOutput("${xml.name}#$id", "($joined) -> XML")
+
+        out.add(current)
+
+        return out
     }
-    return outputList.toList()
+}
+
+class Combiner<T>(
+    val combiner: (Parser<T>, Parser<T>) -> Parser<T>,
+    val neutral: Parser<T>,
+    vararg val parsers: Parser<T>
+) : Parser<T>() {
+    override fun parse(string: StringE<T>): StringE<T> {
+        return parsers.toList().foldRight(neutral, combiner).parse(string)
+    }
+}
+
+class OpenTagParser : Parser<String>() {
+    override fun parse(string: StringE<String>): StringE<String> {
+        return Combiner(
+            (::Compose), IdParser(),
+            ParseSkipChar(Predicate { x -> x == '<' }),
+            Repeat(ParseAddChar(Predicate { x -> x != '<' && x != '>' && x != '/' })),
+            ParseSkipChar(Predicate { x -> x == '>' })
+        ).parse(string)
+    }
+}
+
+class CloseTagParser : Parser<String>() {
+    override fun parse(string: StringE<String>): StringE<String> {
+        return Combiner(
+            (::Compose), IdParser(),
+            ParseSkipChar(Predicate { x -> x == '<' }),
+            ParseSkipChar(Predicate { x -> x == '/' }),
+            Repeat(ParseAddChar(Predicate { x -> x != '<' && x != '>' && x != '/' })),
+            ParseSkipChar(Predicate { x -> x == '>' })
+        ).parse(string)
+    }
+}
+
+class ParseXML : Parser<String>() {
+    override fun parse(string: StringE<String>): StringE<String> {
+        return Repeat(Compose(OpenTagParser(), CloseTagParser())).parse(string)
+    }
 }
 
 fun main() {
@@ -177,21 +227,14 @@ fun main() {
     /*
         Output:
         ("bb#1","XML")
-        ("aa#1", "(cc#1, bb#1) -> XML")
+        ("aa#1", "(bb#1) -> XML")
     */
 
-    val xml = XML(
-        "aa",
-        listOf(XML(
-            "bb", listOf()
-        ), XML(
-            "cc", listOf()
-        ), XML(
-                "aa", listOf()
-        ),
-            XML("bb", listOf())
-            )
-    )
+    val p = ParseXML()
 
-    structurize(xml)
+    val res = p.parse(Str("<aa></aa><c></c>", ""))
+
+    when (res) {
+        is Str -> println(res.struct)
+    }
 }
