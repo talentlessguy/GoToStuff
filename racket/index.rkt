@@ -14,15 +14,24 @@
   )
 )
 
-(define (sq x) x * x)
+(define (sq x) (* x x))
+(define (quad x) (* (sq x) (sq x)))
 
 (define (sqList l)
   (if (null? l)
     null
-    (cons (sq (car l)) (cdr l))
+    (cons (sq (car l)) (sqList (cdr l)))
+  )
+)
+
+(define (quadList l)
+  (if (null? l)
+    null
+    (cons (quad (car l)) (quadList (cdr l)))
   )
 )
 
 (sumList '(1 2 3 4))
 (productList '(1 2 3 4))
 (sqList '(4 2 3 3))
+(quadList '(3 2 5 6))
