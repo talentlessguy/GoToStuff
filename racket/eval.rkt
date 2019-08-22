@@ -2,11 +2,17 @@
 
 (struct funccall (name args) #:transparent)
 
+(struct funccall (name) #:transparent)
+
 (define (mul l) (foldl * 1 l))
 
 (define (add l) (foldl + 0 l))
 
 (define (sub l) (foldl - 0 l))
+
+(define env (
+  hash
+))
 
 (define builtins (
   hash

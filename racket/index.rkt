@@ -31,7 +31,17 @@
   )
 )
 
+
+(define (index l n)
+  (if (= n 0)
+    (first l)
+    (index (rest l) (- n 1))
+  )
+)
+
 (sumList '(1 2 3 4))
 (productList '(1 2 3 4))
 (sqList '(4 2 3 3))
 (quadList '(3 2 5 6))
+
+(index '("a" "b" "c") 2)

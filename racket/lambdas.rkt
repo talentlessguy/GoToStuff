@@ -9,7 +9,7 @@
 (define (myFoldl f acc l)
   (if (null? l)
     acc
-    (foldl f (f acc (first l))
+    (myFoldl f (f acc (first l))
       (rest l))
 ))
 
@@ -20,7 +20,18 @@
       (first l))
 ))
 
+(define (myFilter l f)
+  (cond
+    [(null? l)
+      '()
+    ]
+    [(f (first l))
+      (cons (f (first l)) (myFilter (rest l) f))
+    ]
+    [else (rest l)]
+  )
+)
+
 (myMap '(1 2 3) (lambda (x) (+ x 1)))
 
-(foldl + 0 '(1 2 3))
-(foldr + 0 '(1 2 3))
+(myFilter '(0 2 3 1 2 3) (lambda (x) (> x 1)))
